@@ -231,6 +231,18 @@ impl<T: Component> Popup<T> {
             && y >= self.area.top()
             && y < self.area.bottom();
 
+        let close_fn: Callback = Box::new(|compositor, _| {
+            // remove the layer
+            compositor.remove(self.id.as_ref());
+        });
+
+        match kind {
+            MouseEventKind::Down(_) if self.auto_close => {
+                return EventResult::Ignored(Some(close_fn));
+            }
+            _ => {}
+        }
+
         if !mouse_is_within_popup {
             return EventResult::Ignored(None);
         }
