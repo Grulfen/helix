@@ -3,7 +3,7 @@ mod document;
 pub(crate) mod editor;
 mod info;
 pub mod lsp;
-mod markdown;
+pub mod markdown;
 pub mod menu;
 pub mod overlay;
 pub mod picker;

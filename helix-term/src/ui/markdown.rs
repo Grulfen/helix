@@ -19,7 +19,7 @@ use helix_view::{
     Theme,
 };
 
-fn styled_multiline_text<'a>(text: &str, style: Style) -> Text<'a> {
+pub fn styled_multiline_text<'a>(text: &str, style: Style) -> Text<'a> {
     let spans: Vec<_> = text
         .lines()
         .map(|line| Span::styled(line.to_string(), style))

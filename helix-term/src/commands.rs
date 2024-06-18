@@ -345,6 +345,7 @@ impl MappableCommand {
         jumplist_picker, "Open jumplist picker",
         symbol_picker, "Open symbol picker",
         changed_file_picker, "Open changed file picker",
+        show_hunk, "Show content of hunk under cursor",
         select_references_to_symbol_under_cursor, "Select symbol references",
         workspace_symbol_picker, "Open workspace symbol picker",
         diagnostics_picker, "Open diagnostic picker",
@@ -3136,6 +3137,61 @@ fn changed_file_picker(cx: &mut Context) {
     cx.push_layer(Box::new(overlaid(picker)));
 }
 
+fn show_hunk(cx: &mut Context) {
+    let (view, doc) = current!(cx.editor);
+
+    if let Some(handle) = doc.diff_handle() {
+        if let Some(popup) = hunk_popup(handle, doc, view, &cx.editor.theme) {
+            cx.push_layer(Box::new(popup));
+        };
+    };
+}
+
+fn hunk_popup(
+    handle: &helix_vcs::DiffHandle,
+    doc: &Document,
+    view: &View,
+    theme: &helix_view::Theme,
+) -> Option<Popup<ui::Text>> {
+    let diff = handle.load();
+    let text = doc.text().slice(..);
+    let line = doc.selection(view.id).primary().cursor_line(text);
+    let hunk = diff
+        .hunk_at(line as u32, false)
+        .map(|idx| diff.nth_hunk(idx))?;
+
+    let deleted = diff_string(&hunk.before, diff.diff_base().slice(..), "-");
+    let added = diff_string(&hunk.after, diff.doc().slice(..), "+");
+    let deleted_styled = ui::markdown::styled_multiline_text(&deleted, theme.get("diff.minus"));
+    let added_styled = ui::markdown::styled_multiline_text(&added, theme.get("diff.plus"));
+    let hunk_text = if hunk.is_pure_insertion() {
+        added_styled
+    } else if hunk.is_pure_removal() {
+        deleted_styled
+    } else {
+        let mut tmp_text = tui::text::Text::from("");
+        tmp_text.extend(deleted_styled);
+        tmp_text.extend(added_styled);
+        tmp_text
+    };
+    let ui_text = ui::Text::from(hunk_text);
+    Some(
+        Popup::new("hunk", ui_text)
+            .auto_close(true)
+            .with_scrollbar(true),
+    )
+}
+
+fn diff_string(range: &std::ops::Range<u32>, text: RopeSlice, prefix: &str) -> String {
+    let char_range = line_range_to_char_range(range, text);
+    text.slice(char_range.anchor..char_range.head)
+        .to_string()
+        .lines()
+        .map(|line| format!("{} {}", prefix, line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 impl ui::menu::Item for MappableCommand {
     type Data = ReverseKeymap;
 
@@ -3660,7 +3716,7 @@ fn goto_first_change_impl(cx: &mut Context, reverse: bool) {
             diff.nth_hunk(idx)
         };
         if hunk != Hunk::NONE {
-            let range = hunk_range(hunk, doc.text().slice(..));
+            let range = line_range_to_char_range(&hunk.after, doc.text().slice(..));
             doc.set_selection(view.id, Selection::single(range.anchor, range.head));
         }
     }
@@ -3702,7 +3758,7 @@ fn goto_next_change_impl(cx: &mut Context, direction: Direction) {
                 return range;
             };
             let hunk = diff.nth_hunk(hunk_idx);
-            let new_range = hunk_range(hunk, doc_text);
+            let new_range = line_range_to_char_range(&hunk.after, doc_text);
             if editor.mode == Mode::Select {
                 let head = if new_range.head < range.anchor {
                     new_range.anchor
@@ -3724,12 +3780,12 @@ fn goto_next_change_impl(cx: &mut Context, direction: Direction) {
 /// Returns the [Range] for a [Hunk] in the given text.
 /// Additions and modifications cover the added and modified ranges.
 /// Deletions are represented as the point at the start of the deletion hunk.
-fn hunk_range(hunk: Hunk, text: RopeSlice) -> Range {
-    let anchor = text.line_to_char(hunk.after.start as usize);
-    let head = if hunk.after.is_empty() {
+fn line_range_to_char_range(line_range: &std::ops::Range<u32>, text: RopeSlice) -> Range {
+    let anchor = text.line_to_char(line_range.start as usize);
+    let head = if line_range.is_empty() {
         anchor + 1
     } else {
-        text.line_to_char(hunk.after.end as usize)
+        text.line_to_char(line_range.end as usize)
     };
 
     Range::new(anchor, head)
