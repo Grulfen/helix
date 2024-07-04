@@ -3141,7 +3141,7 @@ fn show_hunk(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
 
     if let Some(handle) = doc.diff_handle() {
-        if let Some(popup) = hunk_popup(handle, doc, view, &cx.editor.theme) {
+        if let Some(popup) = hunk_popup(handle, doc, view) {
             cx.push_layer(Box::new(popup));
         };
     };
@@ -3151,8 +3151,7 @@ fn hunk_popup(
     handle: &helix_vcs::DiffHandle,
     doc: &Document,
     view: &View,
-    theme: &helix_view::Theme,
-) -> Option<Popup<ui::Text>> {
+) -> Option<Popup<ui::diff::Diff>> {
     let diff = handle.load();
     let text = doc.text().slice(..);
     let line = doc.selection(view.id).primary().cursor_line(text);
@@ -3162,21 +3161,15 @@ fn hunk_popup(
 
     let deleted = diff_string(&hunk.before, diff.diff_base().slice(..), "-");
     let added = diff_string(&hunk.after, diff.doc().slice(..), "+");
-    let deleted_styled = ui::markdown::styled_multiline_text(&deleted, theme.get("diff.minus"));
-    let added_styled = ui::markdown::styled_multiline_text(&added, theme.get("diff.plus"));
-    let hunk_text = if hunk.is_pure_insertion() {
-        added_styled
-    } else if hunk.is_pure_removal() {
-        deleted_styled
-    } else {
-        let mut tmp_text = tui::text::Text::from("");
-        tmp_text.extend(deleted_styled);
-        tmp_text.extend(added_styled);
-        tmp_text
+
+    let diff = ui::diff::Diff {
+        added,
+        deleted,
+        hunk,
     };
-    let ui_text = ui::Text::from(hunk_text);
+
     Some(
-        Popup::new("hunk", ui_text)
+        Popup::new("hunk", diff)
             .auto_close(true)
             .with_scrollbar(true),
     )
